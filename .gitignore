@@ -14,3 +14,24 @@ test_gen
 test_gen.caches
 TEST-*.xml
 junit*.properties
+
+
+
+# macOS
+.DS_Store
+
+# VS Code
+.vscode/
+
+# IntelliJ IDEA
+.idea/
+*.iml
+
+# Maven/Java
+target/
+
+# Logs
+*.log
+
+# Others
+*.class
