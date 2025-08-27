@@ -2,6 +2,13 @@
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
+
+    <!--
+    The Spring Boot parent POM has been removed to resolve the dependency
+    conflict with the older SparkJava framework. We will manage dependencies
+    directly in this POM.
+    -->
+
     <groupId>com.rohitdhiman</groupId>
     <artifactId>session-management</artifactId>
     <version>1.0-SNAPSHOT</version>
@@ -32,38 +39,22 @@
             <artifactId>slf4j-simple</artifactId>
             <version>1.7.32</version>
         </dependency>
-        <!-- Junit is not needed for this project, but you can add if you are adding tests -->
-        <!-- <dependency>
-            <groupId>junit</groupId>
-            <artifactId>junit</artifactId>
-            <version>4.11</version>
-            <scope>test</scope>
-        </dependency> -->
     </dependencies>
 
     <build>
         <plugins>
-            <!-- Maven Assembly Plugin to create a single runnable JAR with dependencies -->
+            <!--
+            The Spring Boot Maven Plugin is kept to create a single, executable JAR file.
+            It does not require the parent POM to function.
+            -->
             <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-assembly-plugin</artifactId>
-                <version>3.3.0</version>
-                <configuration>
-                    <descriptorRefs>
-                        <descriptorRef>jar-with-dependencies</descriptorRef>
-                    </descriptorRefs>
-                    <archive>
-                        <manifest>
-                            <mainClass>com.rohitdhiman.SessionManager</mainClass>
-                        </manifest>
-                    </archive>
-                </configuration>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <version>3.2.0</version>
                 <executions>
                     <execution>
-                        <id>make-assembly</id>
-                        <phase>package</phase>
                         <goals>
-                            <goal>single</goal>
+                            <goal>repackage</goal>
                         </goals>
                     </execution>
                 </executions>
