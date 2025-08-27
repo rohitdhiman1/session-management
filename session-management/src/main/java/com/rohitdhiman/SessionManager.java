@@ -19,8 +19,21 @@ public class SessionManager {
 
         // Get Redis host from environment variable
         String redisHost = System.getenv("REDIS_HOST");
-        System.out.println("Connecting to Redis at: " + redisHost);
-        jedis = new Jedis(redisHost);
+        // Get Redis port from environment variable, default to 6379
+        String redisPortStr = System.getenv("REDIS_PORT");
+        int redisPort = 6379; // Default Redis port
+        if (redisPortStr != null) {
+            try {
+                redisPort = Integer.parseInt(redisPortStr);
+            } catch (NumberFormatException e) {
+                // Use default if parsing fails
+                System.err.println("Invalid REDIS_PORT environment variable. Using default port 6379.");
+            }
+        }
+
+        System.out.println("Connecting to Redis at: " + redisHost + ":" + redisPort);
+        // Corrected line to connect to Redis using host and port
+        jedis = new Jedis(redisHost, redisPort);
         System.out.println("Connected to Redis!");
 
         // Route to serve the login page
