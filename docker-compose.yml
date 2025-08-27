@@ -1,0 +1,21 @@
+version: '3.8'
+
+services:
+  redis:
+    image: redis:6.2-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+
+  java-app:
+    build: .
+    ports:
+      - "4567:4567"
+    depends_on:
+      - redis
+    environment:
+      - REDIS_HOST=redis
+
+volumes:
+  redis-data:
