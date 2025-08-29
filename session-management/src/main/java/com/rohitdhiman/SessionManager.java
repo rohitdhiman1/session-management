@@ -4,13 +4,15 @@ import spark.Spark;
 import spark.Request;
 import spark.Response;
 import redis.clients.jedis.Jedis;
+import redis.clients.jedis.JedisPool;
+import redis.clients.jedis.JedisPoolConfig;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.Executors;
 
 public class SessionManager {
 
-    private static Jedis jedis;
+    private static JedisPool jedisPool;
 
     public static void main(String[] args) {
         // Configure Spark to use a fixed thread pool.
@@ -32,8 +34,7 @@ public class SessionManager {
         }
 
         System.out.println("Connecting to Redis at: " + redisHost + ":" + redisPort);
-        // Corrected line to connect to Redis using host and port
-        jedis = new Jedis(redisHost, redisPort);
+        jedisPool = new JedisPool(new JedisPoolConfig(), redisHost, redisPort);
         System.out.println("Connected to Redis!");
 
         // Route to serve the login page
@@ -44,23 +45,18 @@ public class SessionManager {
 
         // Route to handle login form submission
         Spark.post("/login", (req, res) -> {
-            // Hardcoded credentials for this example
             String username = req.queryParams("username");
             String password = req.queryParams("password");
 
             if ("user".equals(username) && "password".equals(password)) {
-                // Generate a unique session ID
                 String sessionId = UUID.randomUUID().toString();
                 String redisKey = "session:" + sessionId;
 
-                // Store session data in Redis with a 15-minute expiration
-                // EX stands for seconds
-                jedis.setex(redisKey, TimeUnit.MINUTES.toSeconds(15), username);
+                try (Jedis jedis = jedisPool.getResource()) {
+                    jedis.setex(redisKey, TimeUnit.MINUTES.toSeconds(15), username);
+                }
 
-                // Set the session ID as a cookie in the user's browser
-                res.cookie("sessionId", sessionId, 15 * 60); // 15-minute cookie lifetime
-
-                // Redirect to the dashboard
+                res.cookie("sessionId", sessionId, 15 * 60);
                 res.redirect("/dashboard");
                 return null;
             } else {
@@ -72,20 +68,20 @@ public class SessionManager {
         Spark.get("/dashboard", (req, res) -> {
             String sessionId = req.cookie("sessionId");
             if (sessionId == null) {
-                // No session ID, redirect to login
                 res.redirect("/login");
                 return null;
             }
 
-            String username = jedis.get("session:" + sessionId);
+            String username;
+            try (Jedis jedis = jedisPool.getResource()) {
+                username = jedis.get("session:" + sessionId);
+            }
             if (username == null) {
-                // Session ID found but no data in Redis (expired or invalid)
                 res.removeCookie("sessionId");
                 res.redirect("/login");
                 return null;
             }
 
-            // Session is valid, render the dashboard content
             return "<html><body>" +
                    "<h1>Welcome, " + username + "!</h1>" +
                    "<p>This is a protected page. Your session is active.</p>" +
@@ -109,13 +105,19 @@ public class SessionManager {
         Spark.get("/logout", (req, res) -> {
             String sessionId = req.cookie("sessionId");
             if (sessionId != null) {
-                // Invalidate the session in Redis
-                jedis.del("session:" + sessionId);
+                try (Jedis jedis = jedisPool.getResource()) {
+                    jedis.del("session:" + sessionId);
+                }
             }
-            // Remove the cookie from the user's browser
             res.removeCookie("sessionId");
             res.redirect("/login");
             return null;
         });
+        // Graceful shutdown: close JedisPool when Spark stops
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            if (jedisPool != null) {
+                jedisPool.close();
+            }
+        }));
     }
 }
