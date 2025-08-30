@@ -1,12 +1,12 @@
 git clone https://github.com/rohitdhiman/session-management.git
 
-# 🚀 Session Management Example
+# Session Management Implementation
 
 >A simple, containerized web application using **SparkJava** and **Redis** for session management. This project demonstrates scalable user session handling in Java, with everything running in Docker for easy setup.
 
 ---
 
-## ✨ Key Features
+## Key Features
 - **User Authentication:** Basic login system with hardcoded credentials
 - **Session Management:** User sessions stored in Redis with expiration
 - **Session-based Authorization:** Protected dashboard for logged-in users
@@ -14,7 +14,7 @@ git clone https://github.com/rohitdhiman/session-management.git
 
 ---
 
-## 🛠️ Technologies Used
+## Tech Stack
 - **Java 17**
 - **Maven** (build tool)
 - **SparkJava** (web framework)
