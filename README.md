@@ -59,23 +59,28 @@ http://localhost:4567
 
 
 ### Credentials
-Login credentials are now set using environment variables for better security and flexibility:
-- `APP_USERNAME`: Username for login (default: `user`)
-- `APP_PASSWORD`: Password for login (default: `password`)
+Login credentials are now managed securely using environment variables, typically set via a `.env` file (recommended) or your shell.
 
-#### How to Set Credentials
+#### Using a `.env` file (Recommended)
+Create a file named `.env` in your project root:
+```env
+APP_USERNAME=yourusername
+APP_PASSWORD=yourpassword
+```
+This file will be automatically loaded by Docker Compose. **Do not commit `.env` to public repositories.**
 
-**With Docker Compose:**
-Add these environment variables to your `docker-compose.yml` under the Java service:
+#### With Docker Compose
+`docker-compose.yml` references these variables:
 ```yaml
 services:
-  app:
+  java-app:
     environment:
-      - APP_USERNAME=yourusername
-      - APP_PASSWORD=yourpassword
+      - REDIS_HOST=redis
+      - APP_USERNAME=${APP_USERNAME}
+      - APP_PASSWORD=${APP_PASSWORD}
 ```
 
-**Locally (without Docker):**
+#### Locally (without Docker)
 Export the variables in your shell before running:
 ```sh
 export APP_USERNAME=yourusername
@@ -83,7 +88,7 @@ export APP_PASSWORD=yourpassword
 ```
 Then start the app as usual.
 
-If not set, the app will use default credentials as specified in the code (see environment variable section above).
+If not set, the app will use default credentials as specified in the code (`user` / `password`).
 
 ### Testing Locally
 1. Go to the login page at `http://localhost:4567/login`.
