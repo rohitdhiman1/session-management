@@ -44,11 +44,15 @@ public class SessionManager {
         });
 
         // Route to handle login form submission
+        // Get credentials from environment variables, fallback to defaults
+        final String ENV_USERNAME = System.getenv().getOrDefault("APP_USERNAME", "user");
+        final String ENV_PASSWORD = System.getenv().getOrDefault("APP_PASSWORD", "password");
+
         Spark.post("/login", (req, res) -> {
             String username = req.queryParams("username");
             String password = req.queryParams("password");
 
-            if ("user".equals(username) && "password".equals(password)) {
+            if (ENV_USERNAME.equals(username) && ENV_PASSWORD.equals(password)) {
                 String sessionId = UUID.randomUUID().toString();
                 String redisKey = "session:" + sessionId;
 
