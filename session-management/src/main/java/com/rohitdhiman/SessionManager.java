@@ -9,6 +9,8 @@ import redis.clients.jedis.JedisPoolConfig;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.Executors;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 
 public class SessionManager {
 
@@ -18,6 +20,8 @@ public class SessionManager {
         // Configure Spark to use a fixed thread pool.
         Spark.threadPool(20);
         Spark.port(4567);
+        // Serve static files from resources/public
+        Spark.staticFiles.location("/public");
 
         // Get Redis host from environment variable
         String redisHost = System.getenv("REDIS_HOST");
@@ -37,9 +41,8 @@ public class SessionManager {
         jedisPool = new JedisPool(new JedisPoolConfig(), redisHost, redisPort);
         System.out.println("Connected to Redis!");
 
-        // Route to serve the login page
         Spark.get("/", (req, res) -> {
-            res.redirect("/login");
+            res.redirect("/login.html");
             return null;
         });
 
@@ -68,7 +71,7 @@ public class SessionManager {
             }
         });
 
-        // Protected dashboard route
+        // Protected dashboard route (static HTML, with username injected)
         Spark.get("/dashboard", (req, res) -> {
             String sessionId = req.cookie("sessionId");
             if (sessionId == null) {
@@ -86,24 +89,21 @@ public class SessionManager {
                 return null;
             }
 
-            return "<html><body>" +
-                   "<h1>Welcome, " + username + "!</h1>" +
-                   "<p>This is a protected page. Your session is active.</p>" +
-                   "<a href='/logout'>Logout</a>" +
-                   "</body></html>";
+            res.type("text/html");
+            try {
+                java.io.InputStream in = SessionManager.class.getResourceAsStream("/public/dashboard.html");
+                if (in == null) throw new Exception("dashboard.html not found in resources");
+                String html = new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+                // Simple username injection
+                html = html.replace("Welcome!", "Welcome, " + username + "!");
+                return html;
+            } catch (Exception e) {
+                res.status(500);
+                return "Error loading dashboard page.";
+            }
         });
 
-        // Route to serve the login page (simple form)
-        Spark.get("/login", (req, res) -> {
-            return "<html><body>" +
-                   "<h1>Login Page</h1>" +
-                   "<form method='post' action='/login'>" +
-                   "Username: <input type='text' name='username'><br>" +
-                   "Password: <input type='password' name='password'><br>" +
-                   "<input type='submit' value='Login'>" +
-                   "</form>" +
-                   "</body></html>";
-        });
+        // Remove /login route, static file will be served by Spark
 
         // Logout route
         Spark.get("/logout", (req, res) -> {
