@@ -48,23 +48,19 @@ public class SessionManager {
             return null;
         });
 
-        // Helper to generate CSRF token
-        SecureRandom random = new SecureRandom();
-        java.util.function.Supplier<String> generateCsrfToken = () -> new BigInteger(130, random).toString(32);
-
-        // Route to serve login.html with CSRF token injected
+        // Route to serve login.html (no CSRF token injection)
         Spark.get("/login.html", (req, res) -> {
-            String csrfToken = generateCsrfToken.get();
             String sessionId = req.cookie("sessionId");
-            if (sessionId != null) {
-                try (Jedis jedis = jedisPool.getResource()) {
-                    jedis.setex("csrf:" + sessionId, TimeUnit.MINUTES.toSeconds(15), csrfToken);
-                }
+            if (sessionId == null || sessionId.isEmpty()) {
+                sessionId = UUID.randomUUID().toString();
+                System.out.println("[DEBUG] Generated new sessionId for login page: " + sessionId);
+                res.cookie("/", "sessionId", sessionId, 15 * 60, false, true);
+            } else {
+                System.out.println("[DEBUG] Existing sessionId for login page: " + sessionId);
             }
             java.io.InputStream in = SessionManager.class.getResourceAsStream("/public/login.html");
             if (in == null) throw new Exception("login.html not found in resources");
             String html = new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
-            html = html.replace("<form method=\"post\" action=\"/login\">", "<form method=\"post\" action=\"/login\"><input type=\"hidden\" name=\"csrfToken\" value=\"" + csrfToken + "\">");
             res.type("text/html");
             return html;
         });
@@ -77,34 +73,28 @@ public class SessionManager {
         Spark.post("/login", (req, res) -> {
             String username = req.queryParams("username");
             String password = req.queryParams("password");
-            String csrfToken = req.queryParams("csrfToken");
             String sessionId = req.cookie("sessionId");
-            boolean csrfValid = false;
-            if (sessionId != null && csrfToken != null) {
-                try (Jedis jedis = jedisPool.getResource()) {
-                    String storedToken = jedis.get("csrf:" + sessionId);
-                    csrfValid = csrfToken.equals(storedToken);
-                }
-            }
-            if (!csrfValid) {
-                res.status(403);
-                return "CSRF validation failed.";
+            System.out.println("[DEBUG] Login POST: sessionId=" + sessionId + ", username=" + username);
+            if (username == null || password == null) {
+                System.out.println("[DEBUG] Login POST: Missing username or password");
+                res.status(400);
+                return "Missing username or password.";
             }
             if (ENV_USERNAME.equals(username) && ENV_PASSWORD.equals(password)) {
+                System.out.println("[DEBUG] Credentials valid for username=" + username);
                 String sessionIdNew = UUID.randomUUID().toString();
                 String redisKey = "session:" + sessionIdNew;
-                String csrfTokenNew = generateCsrfToken.get();
                 try (Jedis jedis = jedisPool.getResource()) {
                     jedis.setex(redisKey, TimeUnit.MINUTES.toSeconds(15), username);
-                    jedis.setex("csrf:" + sessionIdNew, TimeUnit.MINUTES.toSeconds(15), csrfTokenNew);
-                    // Add sessionId to user's session set
                     jedis.sadd("userSessions:" + username, sessionIdNew);
+                    System.out.println("[DEBUG] Created new session for username=" + username + ", sessionId=" + sessionIdNew);
                 }
-                // Set secure, httpOnly cookie
-                res.cookie("/", "sessionId", sessionIdNew, 15 * 60, true, true);
+                res.cookie("/", "sessionId", sessionIdNew, 15 * 60, false, true);
                 res.redirect("/dashboard");
                 return null;
             } else {
+                System.out.println("[DEBUG] Invalid credentials for username=" + username);
+                res.status(401);
                 return "Invalid credentials. <a href='/login'>Try again</a>.";
             }
         });
@@ -113,29 +103,33 @@ public class SessionManager {
         Spark.get("/dashboard", (req, res) -> {
             String sessionId = req.cookie("sessionId");
             if (sessionId == null) {
+                System.out.println("[DEBUG] Dashboard: No sessionId cookie, redirecting to login");
                 res.redirect("/login");
                 return null;
             }
-
-            String username;
+            String username = null;
             try (Jedis jedis = jedisPool.getResource()) {
                 username = jedis.get("session:" + sessionId);
+                System.out.println("[DEBUG] Dashboard: sessionId=" + sessionId + ", username=" + username);
             }
             if (username == null) {
+                System.out.println("[DEBUG] Dashboard: Session not found or expired for sessionId=" + sessionId);
                 res.removeCookie("sessionId");
                 res.redirect("/login");
                 return null;
             }
-
             res.type("text/html");
             try {
                 java.io.InputStream in = SessionManager.class.getResourceAsStream("/public/dashboard.html");
-                if (in == null) throw new Exception("dashboard.html not found in resources");
+                if (in == null) {
+                    System.out.println("[DEBUG] Dashboard: dashboard.html not found in resources");
+                    throw new Exception("dashboard.html not found in resources");
+                }
                 String html = new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
-                // Simple username injection
                 html = html.replace("Welcome!", "Welcome, " + username + "!");
                 return html;
             } catch (Exception e) {
+                System.out.println("[DEBUG] Dashboard: Error loading dashboard page: " + e.getMessage());
                 res.status(500);
                 return "Error loading dashboard page.";
             }
