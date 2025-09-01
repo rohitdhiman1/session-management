@@ -11,6 +11,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.Executors;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.security.SecureRandom;
+import java.math.BigInteger;
 
 public class SessionManager {
 
@@ -46,6 +48,27 @@ public class SessionManager {
             return null;
         });
 
+        // Helper to generate CSRF token
+        SecureRandom random = new SecureRandom();
+        java.util.function.Supplier<String> generateCsrfToken = () -> new BigInteger(130, random).toString(32);
+
+        // Route to serve login.html with CSRF token injected
+        Spark.get("/login.html", (req, res) -> {
+            String csrfToken = generateCsrfToken.get();
+            String sessionId = req.cookie("sessionId");
+            if (sessionId != null) {
+                try (Jedis jedis = jedisPool.getResource()) {
+                    jedis.setex("csrf:" + sessionId, TimeUnit.MINUTES.toSeconds(15), csrfToken);
+                }
+            }
+            java.io.InputStream in = SessionManager.class.getResourceAsStream("/public/login.html");
+            if (in == null) throw new Exception("login.html not found in resources");
+            String html = new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+            html = html.replace("<form method=\"post\" action=\"/login\">", "<form method=\"post\" action=\"/login\"><input type=\"hidden\" name=\"csrfToken\" value=\"" + csrfToken + "\">");
+            res.type("text/html");
+            return html;
+        });
+
         // Route to handle login form submission
         // Get credentials from environment variables, fallback to defaults
         final String ENV_USERNAME = System.getenv().getOrDefault("APP_USERNAME", "user");
@@ -54,16 +77,29 @@ public class SessionManager {
         Spark.post("/login", (req, res) -> {
             String username = req.queryParams("username");
             String password = req.queryParams("password");
-
+            String csrfToken = req.queryParams("csrfToken");
+            String sessionId = req.cookie("sessionId");
+            boolean csrfValid = false;
+            if (sessionId != null && csrfToken != null) {
+                try (Jedis jedis = jedisPool.getResource()) {
+                    String storedToken = jedis.get("csrf:" + sessionId);
+                    csrfValid = csrfToken.equals(storedToken);
+                }
+            }
+            if (!csrfValid) {
+                res.status(403);
+                return "CSRF validation failed.";
+            }
             if (ENV_USERNAME.equals(username) && ENV_PASSWORD.equals(password)) {
-                String sessionId = UUID.randomUUID().toString();
-                String redisKey = "session:" + sessionId;
-
+                String sessionIdNew = UUID.randomUUID().toString();
+                String redisKey = "session:" + sessionIdNew;
+                String csrfTokenNew = generateCsrfToken.get();
                 try (Jedis jedis = jedisPool.getResource()) {
                     jedis.setex(redisKey, TimeUnit.MINUTES.toSeconds(15), username);
+                    jedis.setex("csrf:" + sessionIdNew, TimeUnit.MINUTES.toSeconds(15), csrfTokenNew);
                 }
-
-                res.cookie("sessionId", sessionId, 15 * 60);
+                // Set secure, httpOnly cookie
+                res.cookie("/", "sessionId", sessionIdNew, 15 * 60, true, true);
                 res.redirect("/dashboard");
                 return null;
             } else {
@@ -103,18 +139,17 @@ public class SessionManager {
             }
         });
 
-        // Remove /login route, static file will be served by Spark
-
         // Logout route
         Spark.get("/logout", (req, res) -> {
             String sessionId = req.cookie("sessionId");
             if (sessionId != null) {
                 try (Jedis jedis = jedisPool.getResource()) {
                     jedis.del("session:" + sessionId);
+                    jedis.del("csrf:" + sessionId);
                 }
             }
             res.removeCookie("sessionId");
-            res.redirect("/login");
+            res.redirect("/login.html");
             return null;
         });
         // Graceful shutdown: close JedisPool when Spark stops
