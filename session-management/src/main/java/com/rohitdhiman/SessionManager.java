@@ -97,6 +97,8 @@ public class SessionManager {
                 try (Jedis jedis = jedisPool.getResource()) {
                     jedis.setex(redisKey, TimeUnit.MINUTES.toSeconds(15), username);
                     jedis.setex("csrf:" + sessionIdNew, TimeUnit.MINUTES.toSeconds(15), csrfTokenNew);
+                    // Add sessionId to user's session set
+                    jedis.sadd("userSessions:" + username, sessionIdNew);
                 }
                 // Set secure, httpOnly cookie
                 res.cookie("/", "sessionId", sessionIdNew, 15 * 60, true, true);
@@ -139,13 +141,41 @@ public class SessionManager {
             }
         });
 
+        // Logout from all devices route
+        Spark.get("/logoutAll", (req, res) -> {
+            String sessionId = req.cookie("sessionId");
+            if (sessionId != null) {
+                String username;
+                try (Jedis jedis = jedisPool.getResource()) {
+                    username = jedis.get("session:" + sessionId);
+                    if (username != null) {
+                        // Get all session IDs for this user
+                        java.util.Set<String> sessionIds = jedis.smembers("userSessions:" + username);
+                        for (String sid : sessionIds) {
+                            jedis.del("session:" + sid);
+                            jedis.del("csrf:" + sid);
+                        }
+                        jedis.del("userSessions:" + username);
+                    }
+                }
+            }
+            res.removeCookie("sessionId");
+            res.redirect("/login.html");
+            return null;
+        });
+
         // Logout route
         Spark.get("/logout", (req, res) -> {
             String sessionId = req.cookie("sessionId");
             if (sessionId != null) {
                 try (Jedis jedis = jedisPool.getResource()) {
+                    String username = jedis.get("session:" + sessionId);
                     jedis.del("session:" + sessionId);
                     jedis.del("csrf:" + sessionId);
+                    // Remove sessionId from user's session set
+                    if (username != null) {
+                        jedis.srem("userSessions:" + username, sessionId);
+                    }
                 }
             }
             res.removeCookie("sessionId");
